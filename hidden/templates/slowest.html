@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SearchAI — Slowest Queries</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="max-w-[1100px] mx-auto px-4 py-6">
+    <header class="mb-4">
+      <h1 class="text-3xl font-semibold"><span style="background:linear-gradient(90deg,#6aa5ff,#a38bff);-webkit-background-clip:text;background-clip:text;color:transparent;">SearchAI</span> Slowest Queries</h1>
+      <nav class="text-sm"><a href="/" class="underline">Home</a></nav>
+    </header>
+    <section class="card rounded-2xl p-5 mb-6">
+  <h2 class="text-lg font-semibold mb-1">What this page shows</h2>
+  <p class="text-white/80 leading-relaxed">
+    The <b>Slowest Queries</b> dashboard highlights the individual searches that took the longest
+    to complete. Each entry provides insight into query structure, performance impact, and
+    potential optimization opportunities.
+  </p>
+
+  <ul class="text-white/70 text-sm mt-3 space-y-1 list-disc pl-5">
+    <li><b>Query:</b> The original user input as submitted to SearchAI.</li>
+    <li><b>Response Time (ms):</b> How long the system took to return a result for that query.</li>
+    <li><b>SCI and Metadata:</b> Metrics such as Search Complexity Index (SCI), word length, Boolean logic count, and unique terms
+        that help explain why some searches take longer.</li>
+  </ul>
+
+  <p class="text-xs text-white/60 mt-3">
+    Purpose: This view helps engineers and administrators identify heavy or inefficient searches,
+    tune system performance, and improve the user experience by reducing query latency.
+  </p>
+</section>
+    <section class="card rounded-2xl p-4">
+      <ul id="slowList" class="space-y-3 text-sm"></ul>
+    </section>
+  </div>
+
+  <script>
+    const STOP = new Set(["the","and","or","of","a","an","in","on","for","to","is","are","as","at","by","with","from","that","this","these","those","be","been","being","was","were","it","its","into","about","over","under","than","then","but","if","so","not"]);
+    const BOOL_RE = /\b(AND|OR|NOT)\b/ig;
+    function computeSCI(q){
+      if(!q) return 0;
+      const boolOps = (q.match(BOOL_RE)||[]).length;
+      const tokens = (q.toLowerCase().match(/\b[\w'-]+\b/g)||[]);
+      const uniq = new Set(tokens.filter(t=>!STOP.has(t))).size;
+      return boolOps + tokens.length + uniq;
+    }
+    function escapeHtml(s){ return (s||'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+
+    function renderSlowList(items){
+      const ul = document.getElementById('slowList'); ul.innerHTML = '';
+      (items||[]).forEach(obj=>{
+        const q = (obj.query || obj.q || '').toString();
+        const ms = Math.round(parseFloat(obj.elapsed_ms ?? obj.elapsed ?? 0));
+        const status = (obj.status!=null) ? obj.status : '';
+        const when = obj._ts_local_pretty || obj._ts_local || obj.ts || obj.timestamp || '';
+        const sc = (typeof obj._sci==='number') ? obj._sci : computeSCI(q);
+        const len = (q.match(/\b[\w'-]+\b/g)||[]).length;
+        const bools = (q.match(BOOL_RE)||[]).length;
+        const uniq = new Set((q.toLowerCase().match(/\b[\w'-]+\b/g)||[]).filter(t=>!STOP.has(t))).size;
+        const hash = obj._line_hash || '';
+        const comments = obj._comment_count ?? 0;
+
+        const li = document.createElement('li');
+        li.className = "rounded-xl p-4 border border-white/10 bg-white/5";
+        li.innerHTML = `
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex-1">
+              <div class="text-white/90 mb-1">${escapeHtml(q)}</div>
+              <div class="text-xs text-white/60">
+                <span class="pill">len ${len}</span>
+                <span class="pill">bool ${bools}</span>
+                <span class="pill">uniq ${uniq}</span>
+                <span class="pill">SCI ${sc}</span>
+                <span class="pill">status ${status||'—'}</span>
+                <span class="pill">hash ${hash.slice(0,10)}…</span>
+                <span class="pill">comments ${comments}</span>
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-sm text-white/60">${when}</div>
+              <div class="text-lg font-semibold">${ms} ms</div>
+            </div>
+          </div>`;
+        ul.appendChild(li);
+      });
+    }
+    async function loadMetrics(){
+      const m = await (await fetch('/metrics?days=30')).json();
+      renderSlowList(m.slowest);
+    }
+    document.addEventListener('DOMContentLoaded', loadMetrics);
+  </script>
+</body>
+</html>

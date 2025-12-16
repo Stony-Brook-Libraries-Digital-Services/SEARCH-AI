@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SearchAI — Performance</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="max-w-[1100px] mx-auto px-4 py-6">
+    <header class="mb-4">
+      <h1 class="text-3xl font-semibold"><span class="title-grad">SearchAI</span> Performance</h1>
+      <nav class="text-sm"><a href="/" class="underline">Home</a></nav>
+    </header>
+    <section class="card rounded-2xl p-5 mb-6">
+<h2 class="text-lg font-semibold mb-1">What this page shows</h2>
+ <p class="text-white/80 leading-relaxed">
+ The <b>Performance</b> dashboard tracks how efficiently SearchAI responds to user requests. 
+It highlights query response times and system reliability across recent days. 
+Each visualization helps diagnose where performance can be improved and how well 
+the platform maintains stability under load.
+</p>
+
+<ul class="text-white/70 text-sm mt-3 space-y-1 list-disc pl-5">
+<li><b>Latency Distribution:</b> Shows how fast or slow queries are completed, grouped into time ranges.</li>
+<li><b>P95 Latency:</b> Indicates that 95% of all queries finish faster than this value — 
+a key benchmark for user experience.</li>
+ <li><b>Error Trends (4xx):</b> Displays client-side issues such as malformed queries or invalid requests.</li>
+</ul>
+
+<p class="text-xs text-white/60 mt-3">
+ Purpose: This view helps administrators and engineers monitor response times, 
+detect performance regressions, and ensure SearchAI remains fast and reliable 
+even as usage grows.
+ </p>
+</section>
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="card rounded-2xl p-4"><h3 class="font-semibold mb-2">Latency Distribution</h3><canvas id="latencyHist" height="170"></canvas></div>
+      <div class="card rounded-2xl p-4"><h3 class="font-semibold mb-2">Daily 4xx Errors</h3><canvas id="errorChart" height="170"></canvas></div>
+    </section>
+  </div>
+
+  <script>
+    let latencyChart, errorChart;
+    function setupHist(buckets, counts){
+      const ctx = document.getElementById('latencyHist').getContext('2d');
+      if (latencyChart) latencyChart.destroy();
+      latencyChart = new Chart(ctx, { type:'bar', data:{labels:buckets, datasets:[{label:'queries', data:counts}]}, options:{ plugins:{legend:{display:false}} }});
+    }
+    function setupErrors(labels, counts){
+      const ctx = document.getElementById('errorChart').getContext('2d');
+      if (errorChart) errorChart.destroy();
+      errorChart = new Chart(ctx, { type:'bar', data:{labels, datasets:[{label:'4xx', data:counts}]}, options:{ plugins:{legend:{display:false}} }});
+    }
+    async function loadMetrics(){
+      const m = await (await fetch('/metrics?days=30')).json();
+      setupHist(m.latency.buckets, m.latency.counts);
+      setupErrors(m.errors.labels, m.errors.counts);
+    }
+    document.addEventListener('DOMContentLoaded', loadMetrics);
+  </script>
+</body>
+</html>

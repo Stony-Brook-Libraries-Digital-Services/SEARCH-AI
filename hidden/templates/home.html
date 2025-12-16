@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SearchAI — Home</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="h-full">
+  <div class="max-w-[1100px] mx-auto px-4 py-8">
+    <header class="mb-8">
+      <h1 class="text-3xl font-semibold">
+        <span class="title-grad">SearchAI</span> <span class="text-white/80">Dashboard</span>
+      </h1>
+      <p class="text-sm text-white/60 mt-1">Select a view to explore usage, performance, and research complexity.</p>
+    </header>
+
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <a href="/overview" class="card rounded-2xl p-5 hover:scale-[1.01] transition">
+        <div class="text-lg font-semibold mb-1">Overview</div>
+        <p class="text-sm text-white/70">Key KPIs, daily usage, errors, latency snapshot.</p>
+      </a>
+
+      <a href="/query-types" class="card rounded-2xl p-5 hover:scale-[1.01] transition">
+        <div class="text-lg font-semibold mb-1">Query Types</div>
+        <p class="text-sm text-white/70">SCI pie + distribution, mean/median/p90 complexity.</p>
+      </a>
+
+      <a href="/performance" class="card rounded-2xl p-5 hover:scale-[1.01] transition">
+        <div class="text-lg font-semibold mb-1">Performance</div>
+        <p class="text-sm text-white/70">Latency histogram with percentiles and trend lines.</p>
+      </a>
+
+      <a href="/heatmap" class="card rounded-2xl p-5 hover:scale-[1.01] transition">
+        <div class="text-lg font-semibold mb-1">Usage Heatmap</div>
+        <p class="text-sm text-white/70">Day × hour grid of when SearchAI is used most.</p>
+      </a>
+
+      <a href="/slowest" class="card rounded-2xl p-5 hover:scale-[1.01] transition">
+        <div class="text-lg font-semibold mb-1">Slowest Queries</div>
+        <p class="text-sm text-white/70">Top outliers to target for optimization.</p>
+      </a>
+
+      <a href="/all-searches" class="card rounded-2xl p-5 hover:scale-[1.01] transition">
+        <div class="text-lg font-semibold mb-1">All Searches</div>
+        <p class="text-sm text-white/70">Browse and filter every logged query.</p>
+      </a>
+    </section>
+
+    <footer class="mt-10 text-xs text-white/50">
+      Data file: {{ file }}
+    </footer>
+  </div>
+</body>
+</html>

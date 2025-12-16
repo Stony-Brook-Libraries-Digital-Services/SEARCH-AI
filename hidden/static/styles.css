@@ -1,0 +1,171 @@
+body {
+  background: linear-gradient(180deg, #0a0f1f 0%, #0b1020 100%) !important;
+  color: var(--ink) !important;
+  min-height: 100vh;
+}
+
+.card {
+  background: var(--card) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ==================== CSS VARIABLES ==================== */
+:root {
+  --bg: #0b1020;
+  --card: #111830;
+  --muted: #93a4bf;
+  --ink: #e6edf7;
+  --accent: #6aa5ff;
+  --accent2: #a38bff;
+  
+  /* Heatmap colors */
+  --heat-0: #0b1020;
+  --heat-1: #14213d;
+  --heat-2: #1f3a5f;
+  --heat-3: #2d4d7a;
+  --heat-4: #40649a;
+  --heat-5: #5a7ec0;
+  --heat-6: #7fa2e6;
+  --heat-7: #a8c2ff;
+}
+
+/* ==================== BASE STYLES ==================== */
+html {
+  height: 100%;
+}
+
+body {
+  background: linear-gradient(180deg, #0a0f1f 0%, #0b1020 100%);
+  color: var(--ink);
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+/* ==================== REUSABLE COMPONENTS ==================== */
+.card {
+  background: var(--card);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 1rem;
+  transition: transform 0.2s ease;
+}
+
+.card:hover {
+  transform: scale(1.01);
+}
+
+.title-grad {
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  display: inline-block;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ==================== TABLES ==================== */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: top;
+  text-align: left;
+}
+
+th {
+  color: #cbd5e1;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+td {
+  font-size: 13px;
+  color: #dbe5fb;
+}
+
+/* ==================== HEATMAP SPECIFIC ==================== */
+.heat-grid {
+  display: grid;
+  grid-template-columns: 80px repeat(24, minmax(14px, 1fr));
+  gap: 6px;
+}
+
+.heat-cell {
+  width: 100%;
+  aspect-ratio: 1/1;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.heat-label {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ==================== UTILITY CLASSES ==================== */
+.kbd {
+  font-variant-numeric: tabular-nums;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.text-center {
+  text-align: center;
+}
+
+/* ==================== RESPONSIVE HELPERS ==================== */
+.overflow-x-auto {
+  overflow-x: auto;
+}
+
+/* ==================== FORM ELEMENTS ==================== */
+input, select {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+button {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s ease;
+}
+
+button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

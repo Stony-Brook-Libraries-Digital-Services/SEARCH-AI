@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SearchAI — Query Types</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+<div class="max-w-[1100px] mx-auto px-4 py-6">
+<!-- Header -->
+<header class="mb-4">
+<h1 class="text-3xl font-semibold">
+<span class="title-grad">SearchAI</span> <span class="text-white/90">Query Types</span>
+</h1>
+<nav class="text-sm mt-1">
+<a href="/" class="underline text-white/80 hover:text-white">Home</a>
+</nav>
+</header>
+
+<!-- Elegant Description -->
+<section class="card rounded-2xl p-5 mb-6">
+<h2 class="text-lg font-semibold mb-1">What this page shows</h2>
+<p class="text-white/80 leading-relaxed">
+The <b>Query Types</b> dashboard classifies searches based on their
+<b>Search Complexity Index (SCI)</b> and automatically detected <b>tags</b> 
+(materials and subjects). SCI captures depth by analyzing Boolean operators, query length,
+and unique terms, while fuzzy matching identifies content types and subject areas.
+</p>
+
+<ul class="text-white/70 text-sm mt-3 space-y-1 list-disc pl-5">
+<li><b>Informational:</b> Simple, fact-seeking searches for specific answers or resources.</li>
+<li><b>Exploratory:</b> Broader, multi-topic searches connecting ideas or refining concepts.</li>
+<li><b>Creative:</b> Open-ended, research-driven searches combining complex language or hypotheses.</li>
+</ul>
+
+<p class="text-xs text-white/60 mt-3">
+Purpose: Understanding query complexity and content patterns helps identify user intent —
+whether SearchAI supports quick lookups, discovery, or deep research.
+</p>
+</section>
+
+<!-- Top Row: SCI Pie + Tag Confidence -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+<!-- SCI Pie Chart -->
+<div class="card rounded-2xl p-5">
+<div class="flex items-center justify-between mb-3">
+<h3 class="font-semibold text-lg">Query Complexity Distribution</h3>
+<div id="sciStats" class="text-xs text-white/70">loading…</div>
+</div>
+<canvas id="sciPie" height="180"></canvas>
+</div>
+
+<!-- Tag Confidence Distribution -->
+<div class="card rounded-2xl p-5">
+<h3 class="font-semibold text-lg mb-3">Tag Detection Confidence</h3>
+<canvas id="confidencePie" height="180"></canvas>
+<p class="text-xs text-white/60 mt-2">
+Shows how reliably the fuzzy matcher identified materials and subjects in queries.
+</p>
+</div>
+</section>
+
+<!-- Middle Row: Material & Subject Bar Charts -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+<!-- Materials Chart -->
+<div class="card rounded-2xl p-5">
+<h3 class="font-semibold text-lg mb-3">Material Types</h3>
+<canvas id="materialsChart" height="200"></canvas>
+<p class="text-xs text-white/60 mt-2">
+Most requested content formats (books, articles, videos, etc.)
+</p>
+</div>
+
+<!-- Subjects Chart -->
+<div class="card rounded-2xl p-5">
+<h3 class="font-semibold text-lg mb-3">Subject Areas (Top 10)</h3>
+<canvas id="subjectsChart" height="200"></canvas>
+<p class="text-xs text-white/60 mt-2">
+Most queried academic disciplines and topics
+</p>
+</div>
+</section>
+
+<!-- SCI Histogram (Full Width) -->
+<section class="card rounded-2xl p-5 mb-6">
+<h3 class="font-semibold text-lg mb-3">Search Complexity Index (SCI) Distribution</h3>
+<p class="text-sm text-white/70 mb-4">
+This histogram shows how complex most user queries are, based on the SCI formula.
+Higher scores indicate longer or more advanced searches using Boolean logic or unique terminology.
+</p>
+<canvas id="sciHist" height="200"></canvas>
+</section>
+
+<!-- Subject Co-occurrence Matrix -->
+<section class="card rounded-2xl p-5">
+<h3 class="font-semibold text-lg mb-3">Subject Co-occurrence</h3>
+<p class="text-sm text-white/70 mb-4">
+Shows which subject areas are frequently searched together in the same query.
+</p>
+<div id="coOccurrence" class="text-sm text-white/80">
+Loading co-occurrence data...
+</div>
+</section>
+
+</div>
+
+<script>
+let sciPieChart, sciHistChart, confidencePieChart, materialsChart, subjectsChart;
+
+function setupSciPie(typeCounts){
+const ctx = document.getElementById('sciPie').getContext('2d');
+if (sciPieChart) sciPieChart.destroy();
+const labels = ['Informational','Exploratory','Creative'];
+const data = labels.map(l => (typeCounts && typeCounts[l]) ? typeCounts[l] : 0);
+sciPieChart = new Chart(ctx, {
+type:'pie',
+data:{ labels, datasets:[{ data, backgroundColor:['#6aa5ff','#a38bff','#ff8abf'] }] },
+options:{ plugins:{ legend:{ position:'bottom', labels:{ color:'#e6edf7' }}}}
+});
+}
+
+function setupConfidencePie(confCounts){
+const ctx = document.getElementById('confidencePie').getContext('2d');
+if (confidencePieChart) confidencePieChart.destroy();
+const labels = ['High','Medium','Low','None'];
+const data = [
+confCounts.high || 0,
+confCounts.medium || 0,
+confCounts.low || 0,
+confCounts.none || 0
+];
+confidencePieChart = new Chart(ctx, {
+type:'pie',
+data:{ labels, datasets:[{ data, backgroundColor:['#10b981','#6aa5ff','#f59e0b','#ef4444'] }] },
+options:{ plugins:{ legend:{ position:'bottom', labels:{ color:'#e6edf7' }}}}
+});
+}
+
+function setupMaterialsChart(materials){
+const ctx = document.getElementById('materialsChart').getContext('2d');
+if (materialsChart) materialsChart.destroy();
+const sorted = Object.entries(materials).sort((a,b) => b[1] - a[1]);
+const labels = sorted.map(x => x[0]);
+const data = sorted.map(x => x[1]);
+materialsChart = new Chart(ctx, {
+type:'bar',
+data:{ labels, datasets:[{ label:'count', data, backgroundColor:'#6aa5ff90' }]},
+options:{
+indexAxis: 'y',
+scales:{ x:{ ticks:{ color:'#cbd5e1' }}, y:{ ticks:{ color:'#cbd5e1' }} },
+plugins:{ legend:{ display:false } }
+}
+});
+}
+
+function setupSubjectsChart(subjects){
+const ctx = document.getElementById('subjectsChart').getContext('2d');
+if (subjectsChart) subjectsChart.destroy();
+const sorted = Object.entries(subjects).sort((a,b) => b[1] - a[1]).slice(0, 10);
+const labels = sorted.map(x => x[0]);
+const data = sorted.map(x => x[1]);
+subjectsChart = new Chart(ctx, {
+type:'bar',
+data:{ labels, datasets:[{ label:'count', data, backgroundColor:'#a38bff90' }]},
+options:{
+indexAxis: 'y',
+scales:{ x:{ ticks:{ color:'#cbd5e1' }}, y:{ ticks:{ color:'#cbd5e1', font:{ size:10 }}}},
+plugins:{ legend:{ display:false } }
+}
+});
+}
+
+function setupSciHist(labels, counts){
+const ctx = document.getElementById('sciHist').getContext('2d');
+if (sciHistChart) sciHistChart.destroy();
+sciHistChart = new Chart(ctx, {
+type:'bar',
+data:{ labels:labels||[], datasets:[{ label:'queries', data:counts||[], backgroundColor:'#6aa5ff90' }]},
+options:{
+scales:{ x:{ ticks:{ color:'#cbd5e1' }}, y:{ ticks:{ color:'#cbd5e1' }} },
+plugins:{ legend:{ display:false } }
+}
+});
+}
+
+function renderCoOccurrence(coOcc){
+const container = document.getElementById('coOccurrence');
+if (!coOcc || Object.keys(coOcc).length === 0) {
+container.innerHTML = '<p class="text-white/50 italic">No co-occurrence data available yet.</p>';
+return;
+}
+
+// Build top pairs
+const pairs = [];
+for (const [subj1, partners] of Object.entries(coOcc)) {
+for (const [subj2, count] of Object.entries(partners)) {
+pairs.push({ subj1, subj2, count });
+}
+}
+pairs.sort((a,b) => b.count - a.count);
+const top = pairs.slice(0, 10);
+
+let html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-3">';
+top.forEach(p => {
+html += `
+<div class="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+<div class="text-sm">
+<span class="font-semibold text-white/90">${p.subj1}</span>
+<span class="text-white/50 mx-2">+</span>
+<span class="font-semibold text-white/90">${p.subj2}</span>
+</div>
+<div class="text-lg font-bold text-white/70">${p.count}</div>
+</div>
+`;
+});
+html += '</div>';
+container.innerHTML = html;
+}
+
+async function loadMetrics(){
+const m = await (await fetch('/metrics?days=30')).json();
+
+// SCI stats
+const statsEl = document.getElementById('sciStats');
+if (m.sci){
+const mean = (m.sci.mean!=null)?Math.round(m.sci.mean):0;
+const median = (m.sci.median!=null)?Math.round(m.sci.median):0;
+const p90 = (m.sci.p90!=null)?Math.round(m.sci.p90):0;
+statsEl.textContent = `mean ${mean} • median ${median} • p90 ${p90}`;
+setupSciPie(m.sci.type_counts || {});
+setupSciHist(m.sci.histogram?.buckets || [], m.sci.histogram?.counts || []);
+} else {
+statsEl.textContent = 'SCI data unavailable';
+}
+
+// Tag stats
+if (m.tags) {
+setupConfidencePie(m.tags.confidence || {});
+setupMaterialsChart(m.tags.materials || {});
+setupSubjectsChart(m.tags.subjects || {});
+renderCoOccurrence(m.tags.co_occurrence || {});
+}
+}
+
+document.addEventListener('DOMContentLoaded', loadMetrics);
+</script>
+</body>
+</html>

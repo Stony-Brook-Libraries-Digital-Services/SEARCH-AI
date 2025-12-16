@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SearchAI — Overview</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="max-w-[1100px] mx-auto px-4 py-6">
+    <header class="mb-4">
+      <h1 class="text-3xl font-semibold"><span class="title-grad">SearchAI</span> Overview</h1>
+      <nav class="text-sm"><a href="/" class="underline">Home</a></nav>
+    </header>
+    <section class="card rounded-2xl p-5 mb-6">
+  <h2 class="text-lg font-semibold mb-1">What this overview shows</h2>
+  <p class="text-white/80 leading-relaxed">
+    The <b>Overview</b> dashboard provides a quick summary of SearchAI’s recent activity and
+    performance. It highlights key metrics such as total searches, daily usage,
+    error rates, and system responsiveness. Each chart and figure reflects live data
+    processed from recent user queries.
+  </p>
+  <ul class="text-white/70 text-sm mt-3 space-y-1 list-disc pl-5">
+    <li><b>Total Searches:</b> The total number of logged searches recorded within the dataset.</li>
+    <li><b>Last 24h:</b> The number of searches performed in the past 24 hours (local time).</li>
+    <li><b>4xx (400):</b> User-side errors such as malformed or incomplete queries.</li>
+    <li><b>P95 Latency:</b> The 95th percentile of response time — showing how fast SearchAI performs for nearly all users.</li>
+  </ul>
+  <p class="text-xs text-white/60 mt-3">
+    Purpose: This view helps identify usage trends, stability, and system efficiency at a glance.
+    It serves as a health snapshot for administrators and stakeholders.
+  </p>
+</section>
+    <section class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+      <div class="card rounded-2xl p-4"><div class="text-sm text-white/70">Total rows</div><div id="totalRows" class="text-2xl font-semibold">–</div></div>
+      <div class="card rounded-2xl p-4"><div class="text-sm text-white/70">Last 24h</div><div id="rows24" class="text-2xl font-semibold">–</div></div>
+      <div class="card rounded-2xl p-4"><div class="text-sm text-white/70">4xx (400)</div><div id="count400" class="text-2xl font-semibold">–</div></div>
+      <div class="card rounded-2xl p-4"><div class="text-sm text-white/70">P95 latency (ms)</div><div id="p95" class="text-2xl font-semibold">–</div></div>
+    </section>
+
+    <section class="grid grid-cols-1 gap-4">
+      <div class="card rounded-2xl p-4"><h3 class="font-semibold mb-2">Daily Searches</h3><canvas id="dailyChart" height="150"></canvas></div>
+      <div class="card rounded-2xl p-4">
+  <h3 class="font-semibold mb-2">Search Volume Trend</h3>
+  <canvas id="trendChart" height="150"></canvas>
+  <p class="text-xs text-white/60 mt-2">
+    Displays how total searches vary across days — an indicator of user engagement and library-wide adoption.
+  </p>
+</div>
+
+    </section>
+  </div>
+
+  <script>
+    let dailyChart, errorChart, trendChart;
+    function movingAverage(data, window = 7) {
+      let result = [];
+      for (let i = 0; i < data.length; i++) {
+        const start = Math.max(0, i - window + 1);
+        const slice = data.slice(start, i + 1);
+        const avg = slice.reduce((a, b) => a + b, 0) / slice.length;
+        result.push(Math.round(avg));
+      }
+      return result;
+    }
+
+    function setupDaily(labels, counts){
+      const ctx = document.getElementById('dailyChart').getContext('2d');
+      if (dailyChart) dailyChart.destroy();
+      dailyChart = new Chart(ctx, { type:'line', data:{labels, datasets:[{label:'searches', data:counts, tension:.35, fill:true}]}, options:{ plugins:{legend:{display:false}} }});
+    }
+    function setupTrend(labels, counts){
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Searches',
+        data: counts,
+        borderColor: '#6aa5ff',
+        backgroundColor: 'rgba(106,165,255,0.1)',
+        tension: 0.35,
+        fill: true
+      }]
+    },
+    options: {
+      scales: { y: { beginAtZero: true } },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+    async function loadMetrics(){
+      const m = await (await fetch('/metrics?days=60')).json();
+      document.getElementById('totalRows').textContent = m.total_rows;
+      document.getElementById('rows24').textContent = m.rows_last_24h;
+      document.getElementById('count400').textContent = m.count_400;
+      document.getElementById('p95').textContent = m.p95_elapsed_ms !== null ? Math.round(m.p95_elapsed_ms) : '—';
+      setupDaily(m.daily.labels, m.daily.counts);
+      setupTrend(m.daily.labels, movingAverage(m.daily.counts, 7));
+      }
+    document.addEventListener('DOMContentLoaded', loadMetrics);
+  </script>
+</body>
+</html>

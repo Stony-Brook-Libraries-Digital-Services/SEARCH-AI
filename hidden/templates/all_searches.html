@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SearchAI — All Searches</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="max-w-[1200px] mx-auto px-4 py-6">
+    <header class="mb-4 flex items-center justify-between">
+      <h1 class="text-3xl font-semibold"><span class="title-grad">SearchAI</span> All Searches</h1>
+      <nav class="text-sm"><a href="/" class="underline">Home</a></nav>
+    </header>
+    <section class="card rounded-2xl p-5 mb-6">
+  <h2 class="text-lg font-semibold mb-1">What this page shows</h2>
+  <p class="text-white/80 leading-relaxed">
+    The <b>All Searches</b> dashboard provides a complete view of every recorded query in the SearchAI system.
+    Each entry displays detailed metadata — including response time, search complexity, and query composition —
+    to help analyze user behavior and system performance at scale.
+  </p>
+
+  <ul class="text-white/70 text-sm mt-3 space-y-1 list-disc pl-5">
+    <li><b>Time:</b> The exact local timestamp when the search occurred.</li>
+    <li><b>Status:</b> The response code indicating success or type of error (e.g., 200, 400, 404).</li>
+    <li><b>SCI and Type:</b> The Search Complexity Index score and classification (Informational, Exploratory, or Creative).</li>
+    <li><b>Length, Boolean, Unique:</b> Metrics showing the number of words, logical operators, and distinct terms in the query.</li>
+  </ul>
+
+  <p class="text-xs text-white/60 mt-3">
+    Purpose: This table allows administrators and analysts to explore every search in detail,
+    filter by patterns or performance characteristics, and identify how different user behaviors
+    influence SearchAI’s efficiency and responsiveness.
+  </p>
+    <section class="card rounded-2xl p-4 mb-4">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <input id="qFilter" class="rounded-lg px-3 py-2 bg-white/5 border border-white/10" placeholder="Filter by text…">
+        <select id="typeFilter" class="rounded-lg px-3 py-2 bg-white/5 border border-white/10">
+          <option value="">All types</option>
+          <option>Informational</option>
+          <option>Exploratory</option>
+          <option>Creative</option>
+        </select>
+        <select id="statusFilter" class="rounded-lg px-3 py-2 bg-white/5 border border-white/10">
+          <option value="">Any status</option>
+          <option>200</option><option>400</option><option>404</option><option>500</option>
+        </select>
+        <select id="pageSize" class="rounded-lg px-3 py-2 bg-white/5 border border-white/10">
+          <option>25</option><option selected>50</option><option>100</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="card rounded-2xl p-4">
+      <div class="flex items-center justify-between mb-2">
+        <div class="muted text-sm">Showing <span id="showingCount">0</span> of <span id="totalCount">0</span></div>
+        <div class="flex gap-2">
+          <button id="prevBtn" class="px-3 py-1 rounded-lg bg-white/10">Prev</button>
+          <span class="muted text-sm">Page <span id="curPage">1</span>/<span id="maxPage">1</span></span>
+          <button id="nextBtn" class="px-3 py-1 rounded-lg bg-white/10">Next</button>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th><th>Query</th><th>ms</th><th>Status</th>
+              <th>SCI</th><th>Type</th><th>Len</th><th>Bool</th><th>Unique</th><th>Hash</th><th>Comments</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const BOOL=/\\b(AND|OR|NOT)\\b/ig, STOP=new Set(["the","and","or","of","a","an","in","on","for","to","is","are","as","at","by","with","from","that","this","these","those","be","been","being","was","were","it","its","into","about","over","under","than","then","but","if","so","not"]);
+    function sci(q){if(!q)return 0;let b=(q.match(BOOL)||[]).length;let t=(q.toLowerCase().match(/\\b[\\w'-]+\\b/g)||[]);let u=new Set(t.filter(x=>!STOP.has(x))).size;return b+t.length+u;}
+    function typeFromSCI(s,p65,p90){return s<=p65?"Informational":s<=p90?"Exploratory":"Creative";}
+    const e=(id)=>document.getElementById(id);let all=[],view=[],p65=0,p90=0,page=1,size=50;
+    async function loadAll(){
+      const data=await(await fetch('/snapshot?n=20000')).json();
+      all=data.map(r=>{
+        const q=r.query||r.q||'';
+        const s=(typeof r._sci==='number')?r._sci:sci(q);
+        return{
+          q,
+          time:r._ts_local_pretty||r._ts_local||'',
+          ms:Math.round(r.elapsed_ms||r.elapsed||0),
+          status:r.status||'',
+          sci:s,
+          len:(q.match(/\\b[\\w'-]+\\b/g)||[]).length,
+          bool:(q.match(BOOL)||[]).length,
+          uniq:new Set((q.toLowerCase().match(/\\b[\\w'-]+\\b/g)||[]).filter(t=>!STOP.has(t))).size,
+          hash:r._line_hash||'',
+          comments:r._comment_count||0
+        }
+      });
+      
+all.sort((a, b) => new Date(b.time) - new Date(a.time));
+
+      const scis=all.map(x=>x.sci).sort((a,b)=>a-b);
+      const pct=(p)=>{if(!scis.length)return 0;const pos=(p/100)*(scis.length-1);const lo=Math.floor(pos),hi=Math.min(scis.length-1,lo+1),frac=pos-lo;return scis[lo]*(1-frac)+scis[hi]*frac;};
+      p65=pct(65);p90=pct(90);
+      all.forEach(r=>r.type=typeFromSCI(r.sci,p65,p90));
+      e('totalCount').textContent=all.length;
+      apply();
+    }
+    function apply(){
+      const qf=e('qFilter').value.toLowerCase(),tf=e('typeFilter').value,sf=e('statusFilter').value;
+      view=all.filter(r=>(!qf||r.q.toLowerCase().includes(qf))&&(!tf||r.type===tf)&&(!sf||r.status==sf));
+      page=1;render();
+    }
+    function render(){
+      size=parseInt(e('pageSize').value);
+      const max=Math.max(1,Math.ceil(view.length/size));
+      page=Math.min(page,max);
+      const slice=view.slice((page-1)*size,page*size);
+      e('rows').innerHTML=slice.map(r=>`<tr><td class="muted">${r.time}</td><td>${r.q}</td><td>${r.ms}</td><td>${r.status}</td><td>${r.sci}</td><td><span class="pill">${r.type}</span></td><td>${r.len}</td><td>${r.bool}</td><td>${r.uniq}</td><td class="muted">${r.hash.slice(0,10)}…</td><td>${r.comments}</td></tr>`).join('');
+      e('showingCount').textContent=slice.length;
+      e('curPage').textContent=page;
+      e('maxPage').textContent=max;
+    }
+    e('qFilter').oninput=apply; e('typeFilter').onchange=apply; e('statusFilter').onchange=apply; e('pageSize').onchange=apply;
+    e('prevBtn')?.addEventListener('click',()=>{if(page>1){page--;render();}});
+    e('nextBtn')?.addEventListener('click',()=>{const max=Math.max(1,Math.ceil(view.length/size));if(page<max){page++;render();}});
+    document.addEventListener('DOMContentLoaded', loadAll);
+  </script>
+</body>
+</html>

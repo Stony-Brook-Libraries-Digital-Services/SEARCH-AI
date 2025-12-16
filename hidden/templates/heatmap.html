@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SearchAI — Usage Heatmap</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="max-w-[1100px] mx-auto px-4 py-6">
+    <!-- Header -->
+    <header class="mb-4">
+      <h1 class="text-3xl font-semibold">
+        <span class="title-grad">SearchAI</span> <span class="text-white/90">Usage Heatmap</span>
+      </h1>
+      <nav class="text-sm mt-1">
+        <a href="/" class="underline text-white/80 hover:text-white">Home</a>
+      </nav>
+    </header>
+
+    <!-- Elegant Description -->
+    <section class="card rounded-2xl p-5 mb-4">
+      <div class="flex items-start justify-between gap-4">
+        <div class="max-w-[760px]">
+          <h2 class="text-lg font-semibold mb-1">What this heatmap shows</h2>
+          <p class="text-white/80 leading-relaxed">
+            The heatmap reveals <b>when users search</b> on SearchAI during the week. Each cell
+            is the <b>count of searches</b> for a specific <b>weekday</b> at a specific <b>hour</b> (0–23),
+            computed in <span id="tzLabel" class="font-medium">local time</span>.
+          </p>
+          <ul class="text-white/70 text-sm mt-3 space-y-1 list-disc pl-5">
+            <li><b>Rows:</b> Monday–Sunday</li>
+            <li><b>Columns:</b> Hour of day (00–23)</li>
+            <li><b>Color:</b> Brighter means more searches in that bucket</li>
+          </ul>
+        </div>
+        <div class="text-right text-sm text-white/70">
+          <div id="range" class="kbd">Loading range…</div>
+          <div id="nowLine" class="kbd mt-1 opacity-80">Now: —</div>
+        </div>
+      </div>
+      <div class="mt-3 text-xs text-white/60">
+        Purpose: Identify peak usage for staffing and capacity planning, choose quiet windows for maintenance,
+        and observe adoption patterns (e.g., weekday vs. weekend behavior).
+      </div>
+    </section>
+
+    <!-- Range Selector -->
+    <div class="flex items-center gap-2 mb-4 text-sm">
+      <span class="text-white/70">Range:</span>
+      <button class="range-btn kbd" data-days="7">7d</button>
+      <button class="range-btn kbd" data-days="30">30d</button>
+      <button class="range-btn kbd" data-days="90">90d</button>
+      <button class="range-btn kbd" data-days="all">All</button>
+    </div>
+
+    <!-- Heatmap -->
+    <section class="card rounded-2xl p-5">
+      <div id="heatmap" class="heat-grid"></div>
+      <div class="mt-2 text-xs text-white/60">Mon–Sun × Hour (local time)</div>
+      <div id="legend" class="mt-3 text-xs text-white/70 flex items-center gap-2">
+        <span class="opacity-80">Scale:</span>
+        <span class="inline-block w-4 h-4 rounded" style="background:var(--heat-0)"></span>
+        <span class="inline-block w-4 h-4 rounded" style="background:var(--heat-2)"></span>
+        <span class="inline-block w-4 h-4 rounded" style="background:var(--heat-4)"></span>
+        <span class="inline-block w-4 h-4 rounded" style="background:var(--heat-6)"></span>
+        <span class="inline-block w-4 h-4 rounded" style="background:var(--heat-7)"></span>
+        <span class="opacity-70">→ higher activity</span>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    function cell(text, cls=''){ const d=document.createElement('div'); d.className=cls; d.textContent=text; return d; }
+
+    function renderHeatmap(matrix, maxVal){
+      const root=document.getElementById('heatmap'); root.innerHTML='';
+      const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      // header row
+      root.appendChild(cell('','heat-label'));
+      for(let h=0;h<24;h++) root.appendChild(cell(String(h).padStart(2,'0'),'heat-label text-center'));
+      // rows
+      days.forEach(d=>{
+        root.appendChild(cell(d,'heat-label'));
+        for(let h=0;h<24;h++){
+          const v=(matrix?.[d]?.[h])||0;
+          const level=maxVal?Math.round((v/maxVal)*7):0;
+          const c=document.createElement('div');
+          c.className='heat-cell';
+          c.style.background=`var(--heat-${level})`;
+          c.title=`${d} ${String(h).padStart(2,'0')}:00 — ${v} searches`;
+          root.appendChild(c);
+        }
+      });
+    }
+
+    function highlightActive(activeBtn) {
+      document.querySelectorAll('.range-btn').forEach(btn => {
+        btn.classList.remove('bg-white/20', 'text-white');
+        btn.classList.add('text-white/60');
+      });
+      activeBtn.classList.add('bg-white/20', 'text-white');
+      activeBtn.classList.remove('text-white/60');
+    }
+
+
+    async function loadMetrics(days = 30) {
+      const url = days === "all" ? `/metrics` : `/metrics?days=${days}`;
+      const m = await (await fetch(url)).json();
+
+      // render
+      renderHeatmap(m.heatmap.matrix, m.heatmap.max);
+
+      // meta display
+      const meta = m.meta || {};
+      const tz = meta.local_zone || 'local';
+      const range = (meta.date_start && meta.date_end)
+        ? `${meta.date_start} → ${meta.date_end}`
+        : (days === "all" ? "all data" : `last ${days} days`);
+      const now = meta.now_local || '';
+
+      document.getElementById('tzLabel').textContent = tz;
+      document.getElementById('range').textContent = `Date window: ${range}`;
+      document.getElementById('nowLine').textContent = `Now (${tz}): ${now}`;
+    }
+
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadMetrics(30); // default
+
+      document.querySelectorAll('.range-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const days = btn.dataset.days;
+          console.log("Loading range:", days);    // <--- DEBUG
+          highlightActive(btn);
+          loadMetrics(days);
+        });
+      });
+    });
+  </script>
+</body>
+</html>
