@@ -164,11 +164,9 @@ ft:gpt-4.1-nano-2025-02-xx:your-org:model-searchai
 ```
 
 ### 2. Update SEARCH AI to Use Your Model  
-Place the model ID inside:
 
-```
-model_id.txt
-```
+Create an API key for the fine-tuned model and add that key value to the varlist document as the OPENAI boolean key.
+
 
 The system will automatically load this model for Boolean generation.
 
