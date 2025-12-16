@@ -1,3 +1,4 @@
+/*Drop in function for Primo customization package*/
 
 (function () {
    "use strict";
@@ -261,4 +262,5 @@ app.controller('prmSearchBarAfterController', [function() {
       },
       template: ''
     });
+
 });
