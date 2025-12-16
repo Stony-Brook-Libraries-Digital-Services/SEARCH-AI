@@ -141,17 +141,14 @@ Returns only the **final generated Primo URL**.
 
 ---
 
-## Fine-tuning is used in SEARCH AI to improve how the system:
-- Understands academic-style natural language queries
-- Splits queries into meaningful Boolean concepts
-- Detects and applies facets such as peer-reviewed, online availability, and local holdings
-- Interprets shorthand or “messy” student queries into robust library queries
+## Fine-tuning is used in SEARCH AI to improve the creation of Boolean strings. This step isn't strictly necessary, but can improve the output of the Boolean agent.
 - How to fine-tune using the provided files
-- This repository includes a JSONL file:
-- Boolean_finetune_top100.jsonl
-- These files are designed as training datasets for fine-tuning a model to function as a Boolean-query generator for library search. 
+- This repository includes a JSONL file called Boolean_finetune_top100.jsonl
+- This is an example training file that was used in the training of SEARCH AI at Stony Brook University at basic OpenAI fine-tuning presets.
+- We recommend adjusting fine-tuning data as needed, especially in the testing of different models. We fine-tuned GPT4.1 nano.
+- The exact JSONL format should be kept consistent (e.g., OpenAI chat-style training format). Each line is a separate training example.
 
-⚠️ Note: The exact JSONL format should be kept consistent (e.g., OpenAI chat-style training format). Each line is a separate training example.
+⚠️ Note: We found that over-tuning the model can result in the overuse of Boolean parameters—especially OR cases and wildcards (*)—which can make the strings difficult for humans to read.
 
 ### 1. Run a Training Job  
 Example (from `fine_tunetesting.py`):
