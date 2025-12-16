@@ -12,10 +12,16 @@
 # OPENAI_KEY
 # Purpose: API key the agents use for Prompt1–Prompt4 calls.
 # Where used: Plumbed into OPENAI_API_KEY in open.py at import time.
-# Institution notes: Do NOT hardcode keys in open source repos.
-#   Prefer: export OPENAI_KEY in env and read via os.getenv in open.py.
+# Prefer: export OPENAI_KEY in env and read via os.getenv in open.py.
 
 OPENAI_KEY = (" your_openai_api_key_here ")
+
+# OPENAI_KEY
+# Purpose: API key the agents use for the boolean agent.
+# This can be the same as the first key is using an untuned model. 
+# Where used: Plumbed into OPENAI_API_KEY in open.py at import time.
+
+OPENAI_KEY_BOOLEAN = (" your_trained_api_key_here ")
 
 # prefix
 # Purpose: Base Discovery search URL (everything before &query=...).
@@ -231,4 +237,5 @@ pattern_type = (r"\b(book|books|article|articles|video|videos|audio|audiobook|au
 #   You may also update `local_flag` to a robust regex that matches your variants.
 # line 110
 school_held = ("sbu held")
+
 held_by_school = ("held by sbu")
