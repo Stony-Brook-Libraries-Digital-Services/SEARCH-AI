@@ -13,7 +13,7 @@ from requests.adapters import HTTPAdapter, Retry
 import requests
 import openai
 from datetime import datetime
-from varlist import online_flagg,local_flag, peer_flagg, OPENAI_KEY, OPENAI_KEY_BOOLEAN, Prompt1, Prompt2, Prompt3, Prompt4, prefix, MaterialTypeMap, rtypes, pattern_time, pattern_type, school_held, held_by_school
+from hidden.varlist import online_flagg, local_flag, peer_flagg, OPENAI_KEY, OPENAI_KEY_BOOLEAN, Prompt1, Prompt2, Prompt3, Prompt4, prefix, MaterialTypeMap, rtypes, pattern_time, pattern_type, school_held, held_by_school
 
 
     
@@ -771,3 +771,4 @@ if __name__ == "__main__":
         logger.warning("Interrupted by user.")
 
         sys.exit(1)
+
