@@ -13,7 +13,7 @@ from requests.adapters import HTTPAdapter, Retry
 import requests
 import openai
 from datetime import datetime
-from varlist import online_flagg,local_flag, peer_flagg, OPENAI_KEY, Prompt1, Prompt2, Prompt3, Prompt4, prefix, MaterialTypeMap, rtypes, pattern_time, pattern_type, school_held, held_by_school
+from varlist import online_flagg,local_flag, peer_flagg, OPENAI_KEY, OPENAI_KEY_BOOLEAN, Prompt1, Prompt2, Prompt3, Prompt4, prefix, MaterialTypeMap, rtypes, pattern_time, pattern_type, school_held, held_by_school
 
 
     
@@ -21,6 +21,7 @@ REQUEST_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "60"))
 MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
 RETRY_BACKOFF = float(os.getenv("LLM_RETRY_BACKOFF", "1.5"))
 OPENAI_API_KEY = OPENAI_KEY
+OPENAI_API_KEY_BOOLEAN = OPENAI_KEY_BOOLEAN
 OPENAI_MODEL = "gpt-4.1-mini"
 openai.api_key = OPENAI_API_KEY
 
@@ -46,17 +47,20 @@ def send_chat_prompt(
     user_prompt: str,
     timeout: int = REQUEST_TIMEOUT,
     max_retries: int = MAX_RETRIES,
+    api_key: Optional[str] = None,   # <-- NEW
 ) -> str:
     """
     Sends a chat request to OpenAI and returns the response text.
     Implements exponential backoff on failures.
     """
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY is not set")
+    key_to_use = api_key or OPENAI_API_KEY
+    if not key_to_use:
+        raise RuntimeError("OpenAI API key is not set")
 
     last_err = None
     for attempt in range(1, max_retries + 1):
         try:
+            # IMPORTANT: pass per-request key so we don't mutate global openai.api_key
             resp = openai.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=[
@@ -64,8 +68,7 @@ def send_chat_prompt(
                     {"role": "user",   "content": user_prompt},
                 ],
                 temperature=0.0,
-                # If your installed openai library supports request timeouts, you can pass:
-                # timeout=timeout
+                api_key=key_to_use,   # <-- NEW (supported by modern openai python)
             )
             return (resp.choices[0].message.content or "").strip()
         except Exception as e:
@@ -76,7 +79,7 @@ def send_chat_prompt(
                 time.sleep(wait_time)
             else:
                 logger.critical("OpenAI call failed after %d attempts", attempt)
-                raise RuntimeError(f"OpenAI request failed after maximum retries: {e}") from e            
+                raise RuntimeError(f"OpenAI request failed after maximum retries: {e}") from e
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Agent 1: Query Splitter with Flags
@@ -317,48 +320,46 @@ def build_boolean_string(topic_input: str, verbose: bool = False) -> str:
         logger.info("Building boolean string from: %s", topic_input)
 
     system_prompt = Prompt3[0]["content"]
-
     user_prompt = f"Topic Input: \"{topic_input}\"\nBuild a Comprehensive Boolean search string"
 
     try:
-        resp = openai.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_prompt},
-            ],
-            temperature=0.0,
+        raw = send_chat_prompt(
+            system_prompt,
+            user_prompt,
+            api_key=OPENAI_API_KEY_BOOLEAN,  # <-- uses second key
         )
-        boolean_expr = resp.choices[0].message.content.strip()
-            # Clean up quotes in each Boolean segment
+        boolean_expr = raw.strip()
+
+        # Clean up quotes in each Boolean segment
         segments = re.split(r'(\s+(?:AND|OR|NOT)\s+)', boolean_expr)
         cleaned_segments = []
-        
+
         for segment in segments:
-            # Skip the operators themselves (AND, OR, NOT)
             if segment.strip() in ['AND', 'OR', 'NOT'] or re.match(r'^\s+(?:AND|OR|NOT)\s+$', segment):
                 cleaned_segments.append(segment)
                 continue
-            
-            # Rule 1: If segment contains *, remove ALL quotes
+
             if '*' in segment:
                 segment = segment.replace('"', '')
             else:
-                # Rule 2: If segment has odd number of quotes (not 0 or 2), remove ALL quotes
                 quote_count = segment.count('"')
-                if quote_count % 2 != 0:  # 1, 3, 5, etc. quotes = malformed
+                if quote_count % 2 != 0:
                     segment = segment.replace('"', '')
-            
+
             cleaned_segments.append(segment)
-        
+
         boolean_expr = ''.join(cleaned_segments)
+
     except Exception as e:
         logger.error("OpenAI API error in build_boolean_string: %s", e)
         boolean_expr = ""
 
     if verbose:
         logger.info("Boolean expression: %s", boolean_expr)
+
     return boolean_expr
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -768,4 +769,5 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         logger.warning("Interrupted by user.")
+
         sys.exit(1)
