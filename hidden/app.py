@@ -34,6 +34,20 @@
 # and tags, and presents it through a web interface so humans can understand
 # and improve the search experience.
 
+
+import requests
+from flask import Flask, Response, request, jsonify, render_template
+
+APP = Flask(__name__, static_folder='static', static_url_path='/static')
+
+PRIMO_CSV_URL = "https://repo.api.library.stonybrook.edu/MATT/smartsearch/SEARCHAI%20v1/primo_actions.csv"
+
+@APP.get("/primo_actions.csv")
+def primo_actions_csv():
+    r = requests.get(PRIMO_CSV_URL, timeout=15)
+    r.raise_for_status()
+    return Response(r.text, mimetype="text/csv; charset=utf-8")
+
 # app.py (updated with slowest list, histogram, CSV export, row modal, heatmap)
 import time
 import os
@@ -413,44 +427,34 @@ def get_comment_counts_for_hashes(hashes):
 # -----------------------------------------------------------------------------
 # WHY WE COMPUTE SCI
 # -------------------
-# Not all searches are equal. Some are very simple ("cats"), others are
-# complex Boolean queries ("(climate change OR global warming) AND policy").
-# We define a simple numeric "Search Complexity Index" (SCI) to estimate how
-# advanced a query is.
+# The Search Complexity Index (SCI) estimates how difficult a natural-language
+# submission would be to represent as a short conventional keyword search.
 #
-# HOW SCI IS CALCULATED
-# ----------------------
-# For each query we:
-#   - Count how many Boolean operators appear: AND, OR, NOT.
-#   - Count the total number of word-like tokens.
-#   - Count how many unique non-trivial words are used (ignoring common
-#     stopwords like "the", "and", "of", "in", etc.).
+# The score intentionally uses a small number of interpretable features:
+#   1. Length: how many meaningful terms remain after common stopwords are removed.
+#   2. Relationships: whether the query explicitly connects concepts (for example,
+#      "relationship between", "effect of", "compared with", or "how does").
+#   3. Constraints: whether the query asks for limits such as a material type,
+#      date range, peer-reviewed content, online access, or local holdings.
 #
-# The SCI is roughly:
-#   SCI = (#Boolean operators) + (#tokens) + (#unique non-stopword terms)
+# Each dimension contributes 0-2 points, so SCI normally ranges from 0-6.
+# Classification uses FIXED thresholds rather than percentiles. This means the
+# distribution of Informational / Exploratory / Creative searches is an observed
+# result, not something predetermined by the classification method.
 #
-# HOW THIS IS USED
-# ----------------
-# - SCI is stored per log line as `_sci`.
-# - In the `/metrics` route we use SCI to:
-#     * Build a histogram of query complexity.
-#     * Classify queries into Informational / Exploratory / Creative based
-#       on adaptive percentiles.
-#
-# HOW TO TUNE OR DISABLE THIS
-# ---------------------------
-# - If you feel this metric over- or under-values Boolean logic, you can
-#   adjust the formula in `compute_search_complexity`.
-# - You can switch it off entirely by always returning 0, or by removing
-#   the pieces in `/metrics` that use `_sci`.
+# NOTE ON LABELS
+# --------------
+# "Creative" is retained here for compatibility with the existing dashboard.
+# In this implementation it should be read as "high-complexity" rather than as
+# a direct claim about a patron's intent or creativity.
 
 def percentile_from_sorted(sorted_arr, p):
     """Compute percentile p (0..100) from sorted array using linear interpolation."""
     if not sorted_arr:
         return None
     n = len(sorted_arr)
-    if n == 1: return sorted_arr[0]
-    # position in [0..n-1]
+    if n == 1:
+        return sorted_arr[0]
     pos = (p / 100.0) * (n - 1)
     lo = int(pos)
     hi = min(n - 1, lo + 1)
@@ -459,36 +463,127 @@ def percentile_from_sorted(sorted_arr, p):
     frac = pos - lo
     return sorted_arr[lo] * (1 - frac) + sorted_arr[hi] * frac
 
+# Fixed classification thresholds. These can be adjusted after human validation.
+SCI_INFORMATIONAL_MAX = 1
+SCI_EXPLORATORY_MAX = 4
+
 _STOPWORDS = {
     "the","and","or","of","a","an","in","on","for","to","is","are","as","at","by",
     "with","from","that","this","these","those","be","been","being","was","were",
-    "it","its","into","about","over","under","than","then","but","if","so","not"
+    "it","its","into","about","over","under","than","then","but","if","so","not",
+    "i","me","my","we","our","you","your","he","she","they","their","them",
+    "what","which","who","whom","whose","when","where","why","how",
+    "do","does","did","has","have","had","can","could","would","should","will","may","might",
+    "give","show","find","please"
 }
 
-_BOOL_RE  = re.compile(r"\b(AND|OR|NOT)\b", flags=re.IGNORECASE)
 _TOKEN_RE = re.compile(r"\b[\w'-]+\b", flags=re.UNICODE)
 
-def compute_search_complexity(query: str) -> int:
-    """SCI = #Boolean(AND/OR/NOT) + token_count + unique_terms(excl. stopwords)."""
-    if not isinstance(query, str) or not query.strip():
-        return 0
-    # count boolean operators
-    bool_ops = len(_BOOL_RE.findall(query))
-    # tokens
-    tokens = _TOKEN_RE.findall(query.lower())
-    tok_len = len(tokens)
-    # unique terms excluding stopwords
-    uniq_terms = len({t for t in tokens if t not in _STOPWORDS})
-    return int(bool_ops + tok_len + uniq_terms)
+# Relationship language is deliberately phrase-based. We do not count ordinary
+# occurrences of "and" or "or" as evidence of query complexity.
+_RELATIONSHIP_PATTERNS = {
+    "relationship": re.compile(r"\brelationship\s+(?:between|of|with)\b", re.IGNORECASE),
+    "effect": re.compile(r"\b(?:effect|effects)\s+(?:of|on)\b|\baffect(?:s|ed|ing)?\b", re.IGNORECASE),
+    "impact": re.compile(r"\bimpact(?:s)?\s+(?:of|on)\b|\bimpact(?:s|ed|ing)?\b", re.IGNORECASE),
+    "influence": re.compile(r"\binfluence(?:s|d|ing)?(?:\s+(?:of|on))?\b", re.IGNORECASE),
+    "association": re.compile(r"\b(?:association|correlation|connection)\s+between\b|\bassociated\s+with\b", re.IGNORECASE),
+    "comparison": re.compile(r"\b(?:compare|compared|comparison)\s+(?:to|with|between)\b|\bversus\b|\bvs\.?\b|\bdifference(?:s)?\s+between\b", re.IGNORECASE),
+    "causal_question": re.compile(r"\bhow\s+(?:do|does|did|can|could|will|would)\b", re.IGNORECASE),
+    "whether": re.compile(r"\bwhether\b", re.IGNORECASE),
+    "change_over_time": re.compile(r"\b(?:changed?|changes?|changing)\s+(?:since|over time|after|before)\b", re.IGNORECASE),
+}
 
-def classify_query_type_from_sci(sci: int, p65: float, p90: float) -> str:
-    """
-    Adaptive tertiles: <= p65 -> Informational; <= p90 -> Exploratory; else -> Creative.
-    Keeps classes balanced as traffic changes without hard-coded thresholds.
-    """
-    if sci <= (p65 or 0):
+# Search-limit language. Material types are also detected from MATERIAL_TYPES,
+# so this list focuses on limits not already represented there.
+_CONSTRAINT_PATTERNS = {
+    "peer_reviewed": re.compile(r"\bpeer[- ]reviewed\b|\bscholarly\s+(?:article|articles|paper|papers|journal|journals)\b", re.IGNORECASE),
+    "online": re.compile(r"\b(?:online|electronic|digital|full[- ]text)\b", re.IGNORECASE),
+    "local_holdings": re.compile(r"\b(?:in our library|at our library|held by (?:the )?library|locally held|available (?:at|in) (?:the )?library|at stony brook|stony brook libraries?)\b", re.IGNORECASE),
+    "date": re.compile(
+        r"\b(?:18|19|20)\d{2}\b"
+        r"|\b(?:18|19|20)\d0s\b"
+        r"|\b\d{1,2}(?:st|nd|rd|th)\s+century\b"
+        r"|\b(?:recent|recently|latest|current|contemporary)\b"
+        r"|\blast\s+\d+\s+years?\b"
+        r"|\b(?:before|after|since|during)\b"
+        r"|\bbetween\s+(?:18|19|20)\d{2}\s+and\s+(?:18|19|20)\d{2}\b",
+        re.IGNORECASE
+    ),
+}
+
+def _contains_material_type(query_lower: str) -> bool:
+    """Return True when the query explicitly names a material type."""
+    for keywords in MATERIAL_TYPES.values():
+        for keyword in keywords:
+            # Word boundaries avoid cases such as "book" matching inside another word.
+            pattern = r"(?<!\w)" + re.escape(keyword.lower()) + r"(?!\w)"
+            if re.search(pattern, query_lower):
+                return True
+    return False
+
+def compute_search_complexity_details(query: str) -> dict:
+    """Return the SCI score and the component values used to calculate it."""
+    if not isinstance(query, str) or not query.strip():
+        return {
+            "score": 0,
+            "length_score": 0,
+            "relationship_score": 0,
+            "constraint_score": 0,
+            "meaningful_terms": 0,
+            "relationships": [],
+            "constraints": [],
+        }
+
+    query_lower = query.lower()
+    tokens = _TOKEN_RE.findall(query_lower)
+    meaningful = [t for t in tokens if t not in _STOPWORDS]
+    meaningful_count = len(meaningful)
+
+    # 0-4 meaningful terms = 0 points; 5-8 = 1; 9+ = 2.
+    if meaningful_count <= 3:
+        length_score = 0
+    elif meaningful_count <= 5:
+        length_score = 1
+    else:
+        length_score = 2
+
+    relationship_hits = [
+        label for label, pattern in _RELATIONSHIP_PATTERNS.items()
+        if pattern.search(query)
+    ]
+    relationship_score = min(len(relationship_hits), 2)
+
+    constraint_hits = [
+        label for label, pattern in _CONSTRAINT_PATTERNS.items()
+        if pattern.search(query)
+    ]
+    if _contains_material_type(query_lower):
+        constraint_hits.append("material_type")
+    # Deduplicate while preserving order.
+    constraint_hits = list(dict.fromkeys(constraint_hits))
+    constraint_score = min(len(constraint_hits), 2)
+
+    score = length_score + relationship_score + constraint_score
+
+    return {
+        "score": int(score),
+        "length_score": int(length_score),
+        "relationship_score": int(relationship_score),
+        "constraint_score": int(constraint_score),
+        "meaningful_terms": int(meaningful_count),
+        "relationships": relationship_hits,
+        "constraints": constraint_hits,
+    }
+
+def compute_search_complexity(query: str) -> int:
+    """Return the 0-6 Search Complexity Index score for a query."""
+    return compute_search_complexity_details(query)["score"]
+
+def classify_query_type_from_sci(sci: int) -> str:
+    """Classify a query using fixed, interpretable SCI thresholds."""
+    if sci <= SCI_INFORMATIONAL_MAX:
         return "Informational"
-    elif sci <= (p90 or 0):
+    if sci <= SCI_EXPLORATORY_MAX:
         return "Exploratory"
     return "Creative"
 
@@ -687,21 +782,14 @@ def snapshot():
             r["_comment_count"] = counts.get(h, 0)
         else:
             r["_comment_count"] = 0
-    snapshot_scis = []
+    # Compute SCI with fixed thresholds. Store the component scores as well so
+    # librarians can see why a particular query received its classification.
     for r in rows:
         q = r.get("query") or r.get("q") or ""
-        s = compute_search_complexity(q)  # uses AND/OR/NOT + token count + unique terms (excl. stopwords)
-        r["_sci"] = s
-        snapshot_scis.append(s)
-
-    # 2) Derive adaptive thresholds from current snapshot (tertiles ~33% and ~66%)
-    scis_sorted = sorted(snapshot_scis)
-    p65 = percentile_from_sorted(scis_sorted, 65) if scis_sorted else 0
-    p90 = percentile_from_sorted(scis_sorted, 90) if scis_sorted else 0
-
-    # 3) Classify each row into Informational / Exploratory / Creative based on its _sci
-    for r in rows:
-        r["_query_type"] = classify_query_type_from_sci(r.get("_sci", 0), p65, p90)
+        details = compute_search_complexity_details(q)
+        r["_sci"] = details["score"]
+        r["_sci_components"] = details
+        r["_query_type"] = classify_query_type_from_sci(details["score"])
 
     # --- return the enriched rows ---
     return jsonify(rows)
@@ -759,7 +847,7 @@ def metrics():
        - rows_last_24h computed using local now
        - percentiles/histogram use elapsed values unchanged
     """
-    days = int(request.args.get("days", "120"))
+    days = int(request.args.get("days", "180"))
     lines = read_tail(20000)  # window size; adjust if you want more history
     total_rows = len(lines)
 
@@ -876,10 +964,8 @@ def metrics():
         for h in range(24):
             max_count = max(max_count, heatmap[d][h])
     sci_mean = sci_median = sci_p90 = None
-    p65_sci = p90_sci = 0
-    sci_hist_bounds = list(range(0, 51, 5)) + [75, 100, 150]  # tune bins as desired
-    sci_hist_labels = []
-    sci_hist_counts = []
+    sci_hist_labels = [str(v) for v in range(0, 7)]
+    sci_hist_counts = [0] * len(sci_hist_labels)
     type_counts = Counter()
 
     if sci_values:
@@ -887,23 +973,16 @@ def metrics():
         sci_mean   = sum(scis_sorted) / len(scis_sorted)
         sci_median = percentile_from_sorted(scis_sorted, 50)
         sci_p90    = percentile_from_sorted(scis_sorted, 90)
-        p65_sci    = percentile_from_sorted(scis_sorted, 65)
-        p90_sci    = percentile_from_sorted(scis_sorted, 90)
 
-        # histogram across the chosen bounds
-        for i in range(len(sci_hist_bounds) - 1):
-            lo, hi = sci_hist_bounds[i], sci_hist_bounds[i+1]
-            sci_hist_labels.append(f"{lo}–{hi-1}")
-            sci_hist_counts.append(sum(1 for v in sci_values if lo <= v < hi))
-        # open-ended final bin
-        last_lo = sci_hist_bounds[-1]
-        sci_hist_labels.append(f"{last_lo}+")
-        sci_hist_counts.append(sum(1 for v in sci_values if v >= last_lo))
+        # SCI currently ranges from 0-6. Keep an exact-score histogram so the
+        # distribution is easy to interpret.
+        for value in sci_values:
+            if 0 <= value <= 6:
+                sci_hist_counts[int(value)] += 1
 
-        # adaptive classification counts
-        for v in sci_values:
-            t = classify_query_type_from_sci(v, p65_sci, p90_sci)
-            type_counts[t] += 1
+        # Fixed-threshold classification counts.
+        for value in sci_values:
+            type_counts[classify_query_type_from_sci(value)] += 1
         meta = {
         "local_zone": str(LOCAL_ZONE),
         "now_local": now_local.isoformat(),
@@ -955,11 +1034,21 @@ def metrics():
         "sci": {
             "mean": sci_mean,
             "median": sci_median,
-            "p90": sci_p90,
-            "p65": p65_sci,
-            "p90": p90_sci,
+            "score_p90": sci_p90,
+            "informational_max": SCI_INFORMATIONAL_MAX,
+            "exploratory_max": SCI_EXPLORATORY_MAX,
+            # Legacy keys retained so an existing front end that reads p65/p90
+            # for its two cut points will continue to work. They now represent
+            # fixed thresholds, not percentiles.
+            "p65": SCI_INFORMATIONAL_MAX,
+            "p90": SCI_EXPLORATORY_MAX,
             "histogram": {"buckets": sci_hist_labels, "counts": sci_hist_counts},
-            "type_counts": dict(type_counts)  # {"Informational": x, "Exploratory": y, "Creative": z}
+            "type_counts": dict(type_counts),
+            "method": {
+                "length": "0-4 meaningful terms=0; 5-8=1; 9+=2",
+                "relationships": "0=0; 1 detected relationship=1; 2+=2",
+                "constraints": "0=0; 1 detected constraint=1; 2+=2"
+            }
         },
         "tags": {
             "materials": dict(tag_stats["materials"]),
